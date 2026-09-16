@@ -8,4 +8,4 @@
 >* **Base62 :** Uses 62 characters (0-9, a-z, A-Z) for encoding.
 >* since we dont need "+" and "/" we can use base62 we will take an incrementer, which increment whenever we generate a link and encode it using base62 to generate a short link.  
 ### How to make sure two link never get same short link :
->since w~e will be using database, we can use unique key or primary key to store the short link It will~ ensure now two links are same.    
+>since we will be using database, we can use unique key or primary key to store the short link It will ensure now two links are same.    
