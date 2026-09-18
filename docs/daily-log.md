@@ -9,3 +9,10 @@
 >* since we dont need "+" and "/" we can use base62 we will take an incrementer, which increment whenever we generate a link and encode it using base62 to generate a short link.  
 ### How to make sure two link never get same short link :
 >since we will be using database, we can use unique key or primary key to store the short link It will ensure now two links are same.    
+
+## Day 2 - 17 Sep 2026
+
+### Database :
+
+>* **Which Database ?**
+>   PostgreSQL, On day 2, I learned about postgres and how to use it, how i make database, tables, alter table, add rows, constraints and many more thing, i have just done the basics and minimal things. later i will learn thing as i go through the project. 
