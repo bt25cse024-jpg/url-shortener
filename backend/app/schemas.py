@@ -24,3 +24,13 @@ class LinkStatsResponse(BaseModel):
 
   class Config:
     from_attributes = True
+
+
+class RecentLinkItem(BaseModel):
+  short_code: str
+  original_url: str
+  created_at: datetime
+  total_clicks: int
+
+  class Config:
+    from_attributes = True

@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Link2,
   LoaderCircle,
-  RefreshCw,
   Search,
   Sparkles,
 } from 'lucide-react'
@@ -33,8 +32,18 @@ async function readJson(response) {
   return data
 }
 
-async function loadLinkStats(shortCode) {
-  const response = await fetch(`/api/stats/${encodeURIComponent(shortCode)}`)
+async function loadLinkStats(shortCode, days = null) {
+  const url = new URL(`/api/stats/${encodeURIComponent(shortCode)}`, window.location.origin)
+  if (days !== null) {
+    url.searchParams.set('days', String(days))
+  }
+
+  const response = await fetch(url)
+  return readJson(response)
+}
+
+async function loadRecentLinks() {
+  const response = await fetch('/api/links/recent')
   return readJson(response)
 }
 
@@ -52,6 +61,8 @@ function App() {
   const [originalUrl, setOriginalUrl] = useState('')
   const [shortCode, setShortCode] = useState(initialCode)
   const [stats, setStats] = useState(null)
+  const [recentLinks, setRecentLinks] = useState([])
+  const [range, setRange] = useState('all')
   const [createBusy, setCreateBusy] = useState(false)
   const [statsBusy, setStatsBusy] = useState(false)
   const [notice, setNotice] = useState(null)
@@ -66,6 +77,21 @@ function App() {
       })
       .catch(() => {
         if (active) setApiStatus('offline')
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    loadRecentLinks()
+      .then((data) => {
+        if (active) setRecentLinks(data)
+      })
+      .catch(() => {
+        if (active) setRecentLinks([])
       })
 
     return () => {
@@ -100,7 +126,7 @@ function App() {
     }
   }, [initialCode])
 
-  async function refreshStats(code = shortCode) {
+  async function refreshStats(code = shortCode, nextRange = range) {
     const normalizedCode = code.trim()
     if (!normalizedCode) {
       setNotice({ type: 'error', text: 'Enter a short code to view its analytics.' })
@@ -110,7 +136,8 @@ function App() {
     setStatsBusy(true)
     setNotice(null)
     try {
-      const data = await loadLinkStats(normalizedCode)
+      const days = nextRange === 'all' ? null : Number(nextRange)
+      const data = await loadLinkStats(normalizedCode, days)
       setShortCode(normalizedCode)
       setStats(data)
     } catch (error) {
@@ -135,7 +162,9 @@ function App() {
       const created = await readJson(response)
       setOriginalUrl('')
       setShortCode(created.short_code)
-      await refreshStats(created.short_code)
+      await refreshStats(created.short_code, range)
+      const refreshedRecent = await loadRecentLinks()
+      setRecentLinks(refreshedRecent)
       setNotice({ type: 'success', text: 'Short link created.' })
     } catch (error) {
       setNotice({ type: 'error', text: error.message })
@@ -222,6 +251,48 @@ function App() {
               <span className="footnote-line" />
               <span>Each link gets its own click report.</span>
             </div>
+
+            <div className="recent-links-panel">
+              <div className="recent-links-header">
+                <span className="section-kicker">RECENT LINKS</span>
+                <button
+                  type="button"
+                  className="mini-link-button"
+                  onClick={async () => {
+                    try {
+                      setRecentLinks(await loadRecentLinks())
+                    } catch {
+                      setRecentLinks([])
+                    }
+                  }}
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {recentLinks.length ? (
+                <ul className="recent-links-list">
+                  {recentLinks.map((link) => (
+                    <li key={link.short_code} className="recent-link-item">
+                      <button
+                        type="button"
+                        className="recent-link-button"
+                        onClick={() => {
+                          setShortCode(link.short_code)
+                          refreshStats(link.short_code, range)
+                        }}
+                      >
+                        <span className="recent-link-code">/{link.short_code}</span>
+                        <span className="recent-link-url">{link.original_url}</span>
+                        <span className="recent-link-meta">{link.total_clicks} clicks</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="recent-links-empty">No recent links yet.</div>
+              )}
+            </div>
           </aside>
 
           <section className="analytics-section" aria-labelledby="analytics-title">
@@ -262,13 +333,13 @@ function App() {
             )}
 
             {stats ? (
-              <div className="results" key={stats.short_code}>
+              <div className="results" key={`${stats.short_code}-${range}`}>
                 <div className="summary-row">
                   <div className="click-total">
-                    <div className="metric-label"><span className="metric-dot" /> TOTAL CLICKS</div>
+                    <div className="metric-label"><span className="metric-dot" /> {range === 'all' ? 'TOTAL CLICKS' : `LAST ${range.toUpperCase()} DAYS`}</div>
                     <div className="metric-value">{stats.total_clicks.toLocaleString()}</div>
                     <div className="metric-caption">
-                      {stats.total_clicks === 1 ? 'one recorded visit' : 'all recorded visits'}
+                      {stats.total_clicks === 1 ? 'one recorded visit' : `${range === 'all' ? 'all recorded' : 'records in this window'} visits`}
                     </div>
                   </div>
                   <div className="link-detail">
@@ -291,6 +362,21 @@ function App() {
                     <div>
                       <h3>Clicks by day</h3>
                       <p>{chartData.length ? `${chartData.length} ${chartData.length === 1 ? 'day' : 'days'} with activity` : 'No click activity yet'}</p>
+                    </div>
+                    <div className="range-switcher" aria-label="Range selector">
+                      {['7', '30', 'all'].map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className={range === option ? 'range-button active' : 'range-button'}
+                          onClick={() => {
+                            setRange(option)
+                            refreshStats(shortCode, option)
+                          }}
+                        >
+                          {option === 'all' ? 'All' : `${option}D`}
+                        </button>
+                      ))}
                     </div>
                     {peakDay > 0 && (
                       <div className="peak-label"><ArrowDownRight size={15} /> PEAK <strong>{peakDay}</strong></div>
