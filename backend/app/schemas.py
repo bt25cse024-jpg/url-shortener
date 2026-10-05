@@ -14,3 +14,13 @@ class LinkResponse(BaseModel):
 
   class Config:
     from_attributes = True
+
+
+class LinkStatsResponse(BaseModel):
+  short_code: str
+  original_url: str
+  total_clicks: int
+  clicks_per_day: list[dict[str, object]]
+
+  class Config:
+    from_attributes = True

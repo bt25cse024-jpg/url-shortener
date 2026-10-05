@@ -1,9 +1,12 @@
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from .database import Base, engine, get_db
+
+from .cache import get_url, set_url
+from .database import Base, SessionLocal, engine, get_db
 from .models import Click, Link
-from .schemas import LinkCreate, LinkResponse
+from .schemas import LinkCreate, LinkResponse, LinkStatsResponse
 from .utils import base62_encode
 
 # Ensure tables exist on startup
@@ -25,18 +28,61 @@ def create_short_link(payload: LinkCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_link)
 
-    return db_link 
+    return db_link
 
 
-@app.get("/{short_code}")
-def redirect_to_url(short_code: str, db: Session = Depends(get_db)):
+def record_click(link_id: int):
+    db = SessionLocal()
+    try:
+        click = Click(link_id=link_id)
+        db.add(click)
+        db.commit()
+    finally:
+        db.close()
+
+
+@app.get("/stats/{short_code}", response_model=LinkStatsResponse)
+def get_link_stats(short_code: str, db: Session = Depends(get_db)):
     link = db.query(Link).filter(Link.short_code == short_code).first()
     if not link:
         raise HTTPException(status_code=404, detail="Short code not found")
 
-    # Record click event in the analytics diary
-    click = Click(link_id=link.id)
-    db.add(click)
-    db.commit()
+    total_clicks = db.query(Click).filter(Click.link_id == link.id).count()
+    daily_clicks = (
+        db.query(
+            func.date(Click.clicked_at).label("date"),
+            func.count(Click.id).label("clicks"),
+        )
+        .filter(Click.link_id == link.id)
+        .group_by(func.date(Click.clicked_at))
+        .order_by(func.date(Click.clicked_at).desc())
+        .all()
+    )
 
-    return RedirectResponse(url=link.original_url, status_code=307)
+    return {
+        "short_code": link.short_code,
+        "original_url": link.original_url,
+        "total_clicks": total_clicks,
+        "clicks_per_day": [
+            {"date": row.date.isoformat(), "clicks": row.clicks} for row in daily_clicks
+        ],
+    }
+
+
+@app.get("/{short_code}")
+def redirect_to_url(
+    short_code: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    link = db.query(Link).filter(Link.short_code == short_code).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Short code not found")
+
+    original_url = get_url(short_code)
+    if original_url is None:
+        original_url = link.original_url
+        set_url(short_code, original_url)
+
+    background_tasks.add_task(record_click, link.id)
+    return RedirectResponse(url=original_url, status_code=307)
