@@ -3,7 +3,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .cache import get_url, set_url
+from .cache import get_link, set_link
 from .database import Base, SessionLocal, engine, get_db
 from .models import Click, Link
 from .schemas import LinkCreate, LinkResponse, LinkStatsResponse
@@ -75,14 +75,17 @@ def redirect_to_url(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    link = db.query(Link).filter(Link.short_code == short_code).first()
-    if not link:
-        raise HTTPException(status_code=404, detail="Short code not found")
+    cached_link = get_link(short_code)
+    if cached_link is None:
+        link = db.query(Link).filter(Link.short_code == short_code).first()
+        if not link:
+            raise HTTPException(status_code=404, detail="Short code not found")
 
-    original_url = get_url(short_code)
-    if original_url is None:
+        link_id = link.id
         original_url = link.original_url
-        set_url(short_code, original_url)
+        set_link(short_code, link_id, original_url)
+    else:
+        link_id, original_url = cached_link
 
-    background_tasks.add_task(record_click, link.id)
+    background_tasks.add_task(record_click, link_id)
     return RedirectResponse(url=original_url, status_code=307)
